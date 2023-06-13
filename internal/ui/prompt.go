@@ -5,6 +5,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/model"
@@ -169,7 +170,7 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		}
 	case tcell.KeyTab, tcell.KeyRight, tcell.KeyCtrlF:
 		if s, ok := m.CurrentSuggestion(); ok {
-			p.model.SetText(p.model.GetText()+s, "")
+			p.model.SetText(p.formatSuggest(p.model.GetText(), s, false), "")
 			m.ClearSuggestions()
 		}
 	}
@@ -209,11 +210,45 @@ func (p *Prompt) suggest(text, suggestion string) {
 	p.write(text, suggestion)
 }
 
+func (p *Prompt) formatSuggest(text, suggest string, withColor bool) string {
+	if text == suggest || text != "" && suggest == "" {
+		return text
+	}
+	if text == "" && suggest != "" {
+		txt := suggest
+		if withColor {
+			txt = fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, txt)
+		}
+		return txt
+	}
+
+	matchIndex := strings.Index(suggest, text)
+	txt := text
+	if matchIndex != -1 {
+		left := suggest[:matchIndex]
+		if withColor && matchIndex > 0 {
+			left = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[:matchIndex])
+		}
+		right := suggest[matchIndex+len(text):]
+		if withColor && matchIndex < len(suggest)-1 {
+			right = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[matchIndex+len(text):])
+		}
+		txt = left + text + right
+	} else {
+		if withColor {
+			txt += fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, suggest)
+		} else {
+			txt += suggest
+		}
+	}
+	return txt
+}
+
 func (p *Prompt) write(text, suggest string) {
 	p.SetCursorIndex(p.spacer + len(text))
 	txt := text
 	if suggest != "" {
-		txt += fmt.Sprintf("[%s::-]%s", p.styles.Prompt().SuggestColor, suggest)
+		txt = p.formatSuggest(text, suggest, true)
 	}
 	fmt.Fprintf(p, defaultPrompt, p.icon, txt)
 }

@@ -157,11 +157,20 @@ func (a *App) suggestCommand() model.SuggestionFunc {
 	}
 
 	return func(s string) (entries sort.StringSlice) {
-		if s == "" {
-			if a.cmdHistory.Empty() {
-				return
+		if !a.cmdHistory.Empty() {
+			commands := a.cmdHistory.List()
+			if s == "" {
+				entries = append(entries, commands...)
+			} else {
+				for _, c := range commands {
+					if strings.Contains(c, s) {
+						entries = append(entries, c)
+					}
+				}
 			}
-			return a.cmdHistory.List()
+			if len(entries) > 0 {
+				return entries
+			}
 		}
 
 		s = strings.ToLower(s)

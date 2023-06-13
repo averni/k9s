@@ -284,7 +284,5 @@ func (c *Command) exec(cmd, gvr string, comp model.Component, clearStack bool) (
 		return err
 	}
 
-	c.app.cmdHistory.Push(cmd)
-
 	return
 }

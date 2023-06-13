@@ -677,6 +677,8 @@ func (a *App) aliasCmd(evt *tcell.EventKey) *tcell.EventKey {
 }
 
 func (a *App) gotoResource(cmd, path string, clearStack bool) {
+	a.cmdHistory.Push(cmd)
+
 	err := a.command.run(cmd, path, clearStack)
 	if err != nil {
 		dialog.ShowError(a.Styles.Dialog(), a.Content.Pages, err.Error())

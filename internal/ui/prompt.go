@@ -78,12 +78,13 @@ type PromptModel interface {
 type Prompt struct {
 	*tview.TextView
 
-	app     *App
-	noIcons bool
-	icon    rune
-	styles  *config.Styles
-	model   PromptModel
-	spacer  int
+	app         *App
+	noIcons     bool
+	icon        rune
+	styles      *config.Styles
+	model       PromptModel
+	spacer      int
+	hasScrolled bool
 }
 
 // NewPrompt returns a new command view.
@@ -161,12 +162,26 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlW, tcell.KeyCtrlU:
 		p.model.ClearText(true)
 	case tcell.KeyUp:
-		if s, ok := m.NextSuggestion(); ok {
-			p.suggest(p.model.GetText(), s)
+		if !p.hasScrolled && p.app.cmdBuff.Empty() {
+			if s, ok := m.CurrentSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
+			}
+			p.hasScrolled = true
+		} else {
+			if s, ok := m.NextSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
+			}
 		}
 	case tcell.KeyDown:
-		if s, ok := m.PrevSuggestion(); ok {
-			p.suggest(p.model.GetText(), s)
+		if !p.hasScrolled && p.app.cmdBuff.Empty() {
+			if s, ok := m.CurrentSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
+			}
+			p.hasScrolled = true
+		} else {
+			if s, ok := m.PrevSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
+			}
 		}
 	case tcell.KeyTab, tcell.KeyRight, tcell.KeyCtrlF:
 		if s, ok := m.CurrentSuggestion(); ok {
@@ -202,6 +217,7 @@ func (p *Prompt) activate() {
 
 func (p *Prompt) update(text, suggestion string) {
 	p.Clear()
+	p.hasScrolled = false
 	p.write(text, suggestion)
 }
 

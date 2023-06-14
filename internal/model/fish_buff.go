@@ -31,7 +31,7 @@ type FishBuff struct {
 func NewFishBuff(key rune, kind BufferKind) *FishBuff {
 	return &FishBuff{
 		CmdBuff:         NewCmdBuff(key, kind),
-		suggestionIndex: -1,
+		suggestionIndex: 0,
 	}
 }
 
@@ -41,15 +41,10 @@ func (f *FishBuff) PrevSuggestion() (string, bool) {
 		return "", false
 	}
 
-	if f.suggestionIndex < 0 {
-		f.suggestionIndex = 0
-	} else {
-		f.suggestionIndex--
-	}
+	f.suggestionIndex--
 	if f.suggestionIndex < 0 {
 		f.suggestionIndex = len(f.suggestions) - 1
 	}
-
 	return f.suggestions[f.suggestionIndex], true
 }
 
@@ -58,16 +53,10 @@ func (f *FishBuff) NextSuggestion() (string, bool) {
 	if len(f.suggestions) == 0 {
 		return "", false
 	}
-
-	if f.suggestionIndex < 0 {
-		f.suggestionIndex = 0
-	} else {
-		f.suggestionIndex++
-	}
+	f.suggestionIndex++
 	if f.suggestionIndex >= len(f.suggestions) {
 		f.suggestionIndex = 0
 	}
-
 	return f.suggestions[f.suggestionIndex], true
 }
 
@@ -76,12 +65,12 @@ func (f *FishBuff) ClearSuggestions() {
 	if len(f.suggestions) > 0 {
 		f.suggestions = f.suggestions[:0]
 	}
-	f.suggestionIndex = -1
+	f.suggestionIndex = 0
 }
 
 // CurrentSuggestion returns the current suggestion.
 func (f *FishBuff) CurrentSuggestion() (string, bool) {
-	if len(f.suggestions) == 0 || f.suggestionIndex < 0 || f.suggestionIndex >= len(f.suggestions) {
+	if len(f.suggestions) == 0 {
 		return "", false
 	}
 
@@ -130,11 +119,10 @@ func (f *FishBuff) fireSuggestionChanged(ss []string) {
 	f.suggestions, f.suggestionIndex = ss, 0
 
 	var suggest string
-	if len(ss) == 0 {
-		f.suggestionIndex = -1
-	} else {
+	if len(ss) > 0 {
 		suggest = ss[f.suggestionIndex]
 	}
+
 	f.SetText(f.GetText(), suggest)
 
 }

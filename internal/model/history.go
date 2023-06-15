@@ -37,7 +37,7 @@ func (h *History) Push(c string) {
 	}
 
 	c = strings.ToLower(c)
-	if i := h.indexOf(c); i != -1 {
+	if len(h.commands) > 0 && h.commands[0] == c {
 		return
 	}
 	if len(h.commands) < h.limit {

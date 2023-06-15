@@ -23,12 +23,12 @@ func TestHistory(t *testing.T) {
 }
 
 func TestHistoryDups(t *testing.T) {
-	h := model.NewHistory(3)
+	h := model.NewHistory(4)
 	for i := 1; i < 4; i++ {
 		h.Push(fmt.Sprintf("cmd%d", i))
 	}
 	h.Push("cmd1")
 	h.Push("")
 
-	assert.Equal(t, []string{"cmd3", "cmd2", "cmd1"}, h.List())
+	assert.Equal(t, []string{"cmd1", "cmd3", "cmd2", "cmd1"}, h.List())
 }

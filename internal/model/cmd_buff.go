@@ -168,12 +168,45 @@ func (c *CmdBuff) Add(r rune) {
 	}()
 }
 
+// Insert adds a new character to the buffer at the specified index.
+// If the index is out of bounds, call will be ignored.
+func (c *CmdBuff) Insert(r rune, index int) {
+	if index < 0 || index > len(c.buff) {
+		return
+	}
+	c.mx.Lock()
+	{
+		c.buff = append(c.buff[:index], append([]rune{r}, c.buff[index:]...)...)
+	}
+	c.mx.Unlock()
+	c.fireBufferChanged(c.GetText(), c.GetSuggestion())
+	if c.hasCancel() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), keyEntryDelay)
+	c.setCancel(cancel)
+
+	go func() {
+		<-ctx.Done()
+		c.fireBufferCompleted(c.GetText(), c.GetSuggestion())
+		c.resetCancel()
+	}()
+}
+
 // Delete removes the last character from the buffer.
 func (c *CmdBuff) Delete() {
+	c.DeleteAt(len(c.buff) - 1)
+}
+
+// DeleteAt removes the character at the specified index.
+func (c *CmdBuff) DeleteAt(index int) {
 	if c.Empty() {
 		return
 	}
-	c.SetText(string(c.buff[:len(c.buff)-1]), "")
+	if index < 0 || index >= len(c.buff) {
+		return
+	}
+	c.SetText(string(append(c.buff[:index], c.buff[index+1:]...)), "")
 	c.fireBufferChanged(c.GetText(), c.GetSuggestion())
 	if c.hasCancel() {
 		return

@@ -119,7 +119,7 @@ func (f *FishBuff) fireSuggestionChanged(ss []string) {
 	f.suggestions, f.suggestionIndex = ss, 0
 
 	var suggest string
-	if len(ss) > 0 {
+	if len(ss) > 0 && !f.CmdBuff.Empty() {
 		suggest = ss[f.suggestionIndex]
 	}
 

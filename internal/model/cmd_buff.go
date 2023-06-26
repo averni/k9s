@@ -206,7 +206,11 @@ func (c *CmdBuff) DeleteAt(index int) {
 	if index < 0 || index >= len(c.buff) {
 		return
 	}
-	c.SetText(string(append(c.buff[:index], c.buff[index+1:]...)), "")
+	c.mx.Lock()
+	{
+		c.buff, c.suggestion = append(c.buff[:index], c.buff[index+1:]...), ""
+	}
+	c.mx.Unlock()
 	c.fireBufferChanged(c.GetText(), c.GetSuggestion())
 	if c.hasCancel() {
 		return

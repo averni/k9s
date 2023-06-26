@@ -4,6 +4,9 @@ k9s:
   logger:
     tail: 200
     buffer: 2000
+  autocomplete:
+    autocompleteNamespace: true
+    refreshRate: 2m
   currentContext: minikube
   currentCluster: minikube
   clusters:

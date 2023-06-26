@@ -97,7 +97,7 @@ func (b *Browser) InCmdMode() bool {
 }
 
 func (b *Browser) suggestFilter() model.SuggestionFunc {
-	return func(s string) (entries sort.StringSlice) {
+	return func(s string, suggestMode model.SuggestMode) (entries sort.StringSlice) {
 		if s == "" {
 			if b.App().filterHistory.Empty() {
 				return

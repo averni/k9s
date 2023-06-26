@@ -16,7 +16,7 @@ func TestFishAdd(t *testing.T) {
 
 	f := model.NewFishBuff(' ', model.FilterBuffer)
 	f.AddListener(&m)
-	f.SetSuggestionFn(func(text string) sort.StringSlice {
+	f.SetSuggestionFn(func(text string, suggestMode model.SuggestMode) sort.StringSlice {
 		return sort.StringSlice{"blee", "brew"}
 	})
 	f.Add('b')
@@ -45,17 +45,18 @@ func TestFishDelete(t *testing.T) {
 
 	f := model.NewFishBuff(' ', model.FilterBuffer)
 	f.AddListener(&m)
-	f.SetSuggestionFn(func(text string) sort.StringSlice {
+	f.SetSuggestionFn(func(text string, suggestMode model.SuggestMode) sort.StringSlice {
 		return sort.StringSlice{"blee", "duh"}
 	})
 	f.Add('a')
+	assert.Equal(t, "blee", m.suggestion)
 	f.Delete()
 	f.SetActive(true)
 
 	assert.Equal(t, 2, m.changeCount)
-	assert.Equal(t, 3, m.suggCount)
+	assert.Equal(t, 1, m.suggCount)
 	assert.True(t, m.active)
-	assert.Equal(t, "blee", m.suggestion)
+	assert.Equal(t, "", m.suggestion)
 
 	c, ok := f.CurrentSuggestion()
 	assert.True(t, ok)
@@ -83,7 +84,7 @@ func (m *mockSuggestionListener) BufferChanged(_, _ string) {
 }
 
 func (m *mockSuggestionListener) BufferCompleted(text, suggest string) {
-	if m.suggestion != suggest {
+	if suggest != "" && m.suggestion != suggest {
 		m.suggCount++
 	}
 	m.text, m.suggestion = text, suggest

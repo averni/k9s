@@ -298,6 +298,9 @@ var expectedConfig = `k9s:
     fullScreenLogs: false
     textWrap: false
     showTime: false
+  autocomplete:
+    autocompleteNamespace: true
+    refreshRate: 2m
   currentContext: blee
   currentCluster: blee
   keepMissingClusters: false
@@ -400,6 +403,9 @@ var resetConfig = `k9s:
     fullScreenLogs: false
     textWrap: false
     showTime: false
+  autocomplete:
+    autocompleteNamespace: true
+    refreshRate: 2m
   currentContext: blee
   currentCluster: blee
   keepMissingClusters: false

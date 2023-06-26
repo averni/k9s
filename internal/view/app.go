@@ -150,47 +150,27 @@ func (a *App) initSignals() {
 	}(sig)
 }
 
-func (a *App) suggestCommand() model.SuggestionFunc {
-	contextNames, err := a.contextNames()
-	if err != nil {
-		log.Error().Err(err).Msg("failed to list contexts")
+func (a *App) updateSuggestion(s model.Autocompleter) {
+	s.Index("aliases", a.command.alias.Aliases.Keys())
+
+	if nn, err := a.Conn().ValidNamespaces(); err == nil {
+		namespaces := make([]string, len(nn))
+		for i, n := range nn {
+			namespaces[i] = n.Name
+		}
+		s.Index("namespaces", namespaces)
 	}
+}
 
-	return func(s string) (entries sort.StringSlice) {
-		if !a.cmdHistory.Empty() {
-			commands := a.cmdHistory.List()
-			if s == "" {
-				entries = append(entries, commands...)
-			} else {
-				for _, c := range commands {
-					if strings.Contains(c, s) {
-						entries = append(entries, c)
-					}
-				}
-			}
-			if len(entries) > 0 {
-				return entries
-			}
-		}
+func (a *App) suggestCommand() model.SuggestionFunc {
+	promptAutocompleter := model.NewPromptAutocompleter(a.updateSuggestion, a.Config.K9s.Autocomplete.RefreshRateDuration)
 
-		s = strings.ToLower(s)
-		for _, k := range a.command.alias.Aliases.Keys() {
-			if suggest, ok := shouldAddSuggest(s, k); ok {
-				entries = append(entries, suggest)
-			}
-		}
-
-		namespaceNames, err := a.namespaceNames()
-		if err != nil {
-			log.Error().Err(err).Msg("failed to list namespaces")
-		}
-
-		entries = append(entries, suggestSubCommand(s, namespaceNames, contextNames)...)
-		if len(entries) == 0 {
-			return nil
-		}
-		entries.Sort()
-		return
+	a.CmdBuff().AddListenerWithPriority(promptAutocompleter, 3)
+	a.CmdBuff().AddSuggestModeListener(promptAutocompleter)
+	a.cmdHistory.AddListener(promptAutocompleter)
+	a.clusterModel.AddListener(promptAutocompleter)
+	return func(s string, suggestMode model.SuggestMode) (entries sort.StringSlice) {
+		return promptAutocompleter.Suggest(s)
 	}
 }
 
@@ -462,7 +442,9 @@ func (a *App) switchContext(name string) error {
 		if a.Config.ActiveView() == "" || isContextCmd(a.Config.ActiveView()) {
 			a.Config.SetActiveView("pod")
 		}
+
 		a.Config.Reset()
+
 		a.Config.K9s.CurrentContext = name
 		cluster, err := a.Conn().Config().CurrentClusterName()
 		if err != nil {
@@ -479,7 +461,9 @@ func (a *App) switchContext(name string) error {
 		a.Flash().Infof("Switching context to %s", name)
 		a.ReloadStyles(name)
 		a.gotoResource(a.Config.ActiveView(), "", true)
+		a.cmdHistory.Pop()
 		a.clusterModel.Reset(a.factory)
+		a.cmdHistory.Pop()
 	}
 
 	return nil
@@ -524,11 +508,9 @@ func (a *App) Run() error {
 		return err
 	}
 	a.SetRunning(true)
-	if err := a.Application.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	result := a.Application.Run()
+	// never reached...
+	return result
 }
 
 // Status reports a new app status for display.

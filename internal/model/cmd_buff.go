@@ -5,6 +5,7 @@ package model
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 )
@@ -13,6 +14,8 @@ const (
 	maxBuff = 10
 
 	keyEntryDelay = 100 * time.Millisecond
+
+	DefaultWatcherPriority = 0
 
 	// CommandBuffer represents a command buffer.
 	CommandBuffer BufferKind = 1 << iota
@@ -35,13 +38,18 @@ type (
 		// BufferActive indicates the buff activity changed.
 		BufferActive(state bool, kind BufferKind)
 	}
+
+	listener struct {
+		Watcher  BuffWatcher
+		Priority int
+	}
 )
 
 // CmdBuff represents user command input.
 type CmdBuff struct {
 	buff       []rune
 	suggestion string
-	listeners  map[BuffWatcher]struct{}
+	listeners  []listener
 	hotKey     rune
 	kind       BufferKind
 	active     bool
@@ -55,7 +63,7 @@ func NewCmdBuff(key rune, kind BufferKind) *CmdBuff {
 		hotKey:    key,
 		kind:      kind,
 		buff:      make([]rune, 0, maxBuff),
-		listeners: make(map[BuffWatcher]struct{}),
+		listeners: make([]listener, 0, 10),
 	}
 }
 
@@ -259,34 +267,61 @@ func (c *CmdBuff) Empty() bool {
 
 // AddListener registers a cmd buffer listener.
 func (c *CmdBuff) AddListener(w BuffWatcher) {
+	c.AddListenerWithPriority(w, DefaultWatcherPriority)
+}
+
+// AddListener registers a cmd buffer listener.
+func (c *CmdBuff) AddListenerWithPriority(w BuffWatcher, priority int) {
+	defer c.mx.Unlock()
 	c.mx.Lock()
 	{
-		c.listeners[w] = struct{}{}
+		list := listener{Watcher: w, Priority: priority}
+		insertAt := sort.Search(len(c.listeners), func(i int) bool { return c.listeners[i].Priority < priority })
+		if insertAt < len(c.listeners) {
+			if c.listeners[insertAt].Watcher == w {
+				return
+			}
+			c.listeners = append(c.listeners[:insertAt], append([]listener{list}, c.listeners[insertAt:]...)...)
+		} else {
+			c.listeners = append(c.listeners, list)
+		}
 	}
-	c.mx.Unlock()
 }
 
 // RemoveListener removes a listener.
 func (c *CmdBuff) RemoveListener(l BuffWatcher) {
+	defer c.mx.Unlock()
 	c.mx.Lock()
-	delete(c.listeners, l)
-	c.mx.Unlock()
+	{
+		victim := -1
+		for i, lis := range c.listeners {
+			if l == lis.Watcher {
+				victim = i
+				break
+			}
+		}
+
+		if victim == -1 {
+			return
+		}
+		c.listeners = append(c.listeners[:victim], c.listeners[victim+1:]...)
+	}
 }
 
 func (c *CmdBuff) fireBufferCompleted(t, s string) {
-	for l := range c.listeners {
-		l.BufferCompleted(t, s)
+	for _, l := range c.listeners {
+		l.Watcher.BufferCompleted(t, s)
 	}
 }
 
 func (c *CmdBuff) fireBufferChanged(t, s string) {
-	for l := range c.listeners {
-		l.BufferChanged(t, s)
+	for _, l := range c.listeners {
+		l.Watcher.BufferChanged(t, s)
 	}
 }
 
 func (c *CmdBuff) fireActive(b bool) {
-	for l := range c.listeners {
-		l.BufferActive(b, c.GetKind())
+	for _, l := range c.listeners {
+		l.Watcher.BufferActive(b, c.GetKind())
 	}
 }

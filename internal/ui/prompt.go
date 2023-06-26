@@ -14,8 +14,11 @@ import (
 )
 
 const (
-	defaultPrompt = "%c> [::b]%s"
-	defaultSpacer = 4
+	defaultPrompt      = "%c> [::b]%s"
+	searchPrompt       = "%c(search)> [::b]%s"
+	defaultSpacer      = 4
+	searchSpacer       = 12
+	defaultSuggestMode = model.SuggestAutoComplete
 )
 
 var (
@@ -38,6 +41,12 @@ type Suggester interface {
 	ClearSuggestions()
 }
 
+type ConfigurableSuggester interface {
+	Suggester
+	SetSuggestMode(model.SuggestMode)
+	GetSuggestMode() model.SuggestMode
+}
+
 // PromptModel represents a prompt buffer.
 type PromptModel interface {
 	// SetText sets the model text.
@@ -58,6 +67,9 @@ type PromptModel interface {
 	// AddListener registers a command listener.
 	AddListener(model.BuffWatcher)
 
+	// AddListener registers a command listener.
+	AddListenerWithPriority(model.BuffWatcher, int)
+
 	// RemoveListener removes a listener.
 	RemoveListener(model.BuffWatcher)
 
@@ -73,7 +85,7 @@ type PromptModel interface {
 	// Delete deletes the last prompt character.
 	Delete()
 
-	// Insert inserts a new char at current cursor position.
+	// Insert inserts a new char at a given cursor position.
 	Insert(rune, int)
 
 	// DeleteAt deletes a char at a given position.
@@ -92,16 +104,20 @@ type Prompt struct {
 	spacer         int
 	hasScrolled    bool
 	cursorPosition int
+	suggestMode    model.SuggestMode
+	prompt         string
 }
 
 // NewPrompt returns a new command view.
 func NewPrompt(app *App, noIcons bool, styles *config.Styles) *Prompt {
 	p := Prompt{
-		app:      app,
-		styles:   styles,
-		noIcons:  noIcons,
-		TextView: tview.NewTextView(),
-		spacer:   defaultSpacer,
+		app:         app,
+		styles:      styles,
+		noIcons:     noIcons,
+		TextView:    tview.NewTextView(),
+		spacer:      defaultSpacer,
+		suggestMode: model.SuggestAutoComplete,
+		prompt:      defaultPrompt,
 	}
 	if noIcons {
 		p.spacer--
@@ -149,108 +165,159 @@ func (p *Prompt) SetModel(m PromptModel) {
 	p.model.AddListener(p)
 }
 
-func (p *Prompt) fixCursorPosition(m Suggester) {
-	if s, ok := m.CurrentSuggestion(); !ok {
-		p.cursorPosition = len(p.model.GetText())
-	} else {
-		text := p.model.GetText()
-		textPosition := strings.Index(s, text)
-		if textPosition != -1 {
-			textPosition += len(text)
-		} else {
-			textPosition = len(text)
-		}
-		p.cursorPosition = textPosition
-	}
-}
-
 func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
-	m, ok := p.model.(Suggester)
+	m, ok := p.model.(ConfigurableSuggester)
 	if !ok {
 		return evt
 	}
 
+	hasScrolled := false
 	// nolint:exhaustive
 	switch evt.Key() {
 	case tcell.KeyBackspace2, tcell.KeyBackspace, tcell.KeyDelete:
-		if p.cursorPosition <= len(p.model.GetText()) {
+		if p.cursorPosition > 0 && p.cursorPosition <= len(p.model.GetText()) {
 			p.model.DeleteAt(p.cursorPosition - 1)
 			p.cursorPosition--
 		}
 	case tcell.KeyRune:
 		if p.cursorPosition < len(p.model.GetText()) {
 			p.model.Insert(evt.Rune(), p.cursorPosition)
-			p.cursorPosition++
 		} else {
 			p.model.Add(evt.Rune())
-			p.fixCursorPosition(m)
 		}
+		p.cursorPosition++
 	case tcell.KeyEscape:
 		p.model.ClearText(true)
 		p.model.SetActive(false)
+		p.setSuggestMode(defaultSuggestMode)
 		p.cursorPosition = 0
 	case tcell.KeyEnter, tcell.KeyCtrlE:
 		p.model.SetText(p.model.GetText(), "")
 		p.model.SetActive(false)
+		p.setSuggestMode(defaultSuggestMode)
 		p.cursorPosition = 0
 	case tcell.KeyCtrlW, tcell.KeyCtrlU:
 		p.model.ClearText(true)
+		p.cursorPosition = 0
 	case tcell.KeyUp:
 		if !p.hasScrolled && p.app.cmdBuff.Empty() {
-			if s, ok := m.CurrentSuggestion(); ok {
-				p.suggest(p.model.GetText(), s)
-				p.fixCursorPosition(m)
-			}
-			p.hasScrolled = true
+			hasScrolled = true
 		} else {
-			if s, ok := m.NextSuggestion(); ok {
-				p.suggest(p.model.GetText(), s)
-				p.fixCursorPosition(m)
-			}
+			hasScrolled = p.hasScrolled
 		}
+		if s, ok := m.PrevSuggestion(); ok {
+			p.suggest(p.model.GetText(), s)
+		}
+
 	case tcell.KeyDown:
 		if !p.hasScrolled && p.app.cmdBuff.Empty() {
 			if s, ok := m.CurrentSuggestion(); ok {
 				p.suggest(p.model.GetText(), s)
-				p.fixCursorPosition(m)
 			}
-			p.hasScrolled = true
 		} else {
-			if s, ok := m.PrevSuggestion(); ok {
+			if s, ok := m.NextSuggestion(); ok {
 				p.suggest(p.model.GetText(), s)
-				p.fixCursorPosition(m)
 			}
 		}
-	case tcell.KeyTab, tcell.KeyCtrlF:
+		hasScrolled = true
+	case tcell.KeyTab:
+		p.setSuggestMode(defaultSuggestMode)
+		if s, ok := m.CurrentSuggestion(); ok {
+			p.model.SetText(p.formatSuggest(p.model.GetText(), s, false), "")
+			m.ClearSuggestions()
+			p.cursorPosition = len(p.model.GetText())
+		} else {
+			if s, ok := m.NextSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
+			}
+		}
+	case tcell.KeyLeft:
+		hasScrolled = false
+		if p.suggestMode != defaultSuggestMode {
+			p.setSuggestMode(defaultSuggestMode)
+			if s, ok := m.CurrentSuggestion(); ok {
+				p.model.SetText(p.formatSuggest(p.model.GetText(), s, false), "")
+				m.ClearSuggestions()
+				p.cursorPosition = 0
+			}
+		} else {
+			if p.model.GetText() != "" && p.cursorPosition > 0 {
+				p.cursorPosition--
+			}
+		}
+	case tcell.KeyRight:
+		hasScrolled = false
+		if p.suggestMode != defaultSuggestMode {
+			p.setSuggestMode(defaultSuggestMode)
+			if s, ok := m.CurrentSuggestion(); ok {
+				p.model.SetText(p.formatSuggest(p.model.GetText(), s, false), "")
+				m.ClearSuggestions()
+				p.cursorPosition = len(p.model.GetText())
+			}
+		} else {
+			end := len(p.model.GetText())
+			if p.cursorPosition < end {
+				p.cursorPosition++
+			}
+		}
+	case tcell.KeyHome:
+		p.cursorPosition = 0
+	case tcell.KeyEnd:
+		p.cursorPosition = len(p.model.GetText())
 		if s, ok := m.CurrentSuggestion(); ok {
 			p.model.SetText(p.formatSuggest(p.model.GetText(), s, false), "")
 			m.ClearSuggestions()
 			p.cursorPosition = len(p.model.GetText())
 		}
-	case tcell.KeyLeft:
-		start := 0
-		if s, ok := m.CurrentSuggestion(); ok {
-			text := p.model.GetText()
-			start = strings.Index(s, text)
-			if start == -1 {
-				start = 0
+	case tcell.KeyCtrlR:
+		if p.suggestMode == model.SuggestFullText {
+			if s, ok := m.PrevSuggestion(); ok {
+				p.suggest(p.model.GetText(), s)
 			}
-		}
-		if p.model.GetText() != "" && p.cursorPosition > start {
-			p.cursorPosition--
-		}
-	case tcell.KeyRight:
-		end := len(p.model.GetText())
-		if s, ok := m.CurrentSuggestion(); ok {
-			text := p.model.GetText()
-			end += strings.Index(s, text)
-		}
-		if p.cursorPosition < end {
-			p.cursorPosition++
+			p.setSuggestMode(defaultSuggestMode)
+		} else {
+			p.setSuggestMode(model.SuggestFullText)
+			p.model.ClearText(true)
+			p.cursorPosition = 0
+			p.model.SetText("", "")
 		}
 	}
 
+	p.hasScrolled = hasScrolled
+
 	return nil
+}
+
+func (p *Prompt) setSuggestMode(mode model.SuggestMode) {
+	if p.suggestMode == mode {
+		return
+	}
+
+	m, ok := p.model.(ConfigurableSuggester)
+	if !ok {
+		return
+	}
+
+	p.suggestMode = mode
+	m.SetSuggestMode(p.suggestMode)
+	switch p.suggestMode {
+	case model.SuggestAutoComplete:
+		p.spacer = defaultSpacer
+		p.prompt = defaultPrompt
+	case model.SuggestFullText:
+		p.spacer = searchSpacer
+		p.prompt = searchPrompt
+	}
+
+}
+
+func (p *Prompt) SetPrompt(prompt string, spacer int) {
+	p.prompt = prompt
+	p.spacer = spacer
+}
+
+func (p *Prompt) GetSuggestMode() model.SuggestMode {
+	return p.suggestMode
 }
 
 // StylesChanged notifies skin changed.
@@ -272,12 +339,14 @@ func (p *Prompt) activate() {
 	p.Clear()
 	p.write(p.model.GetText(), p.model.GetSuggestion())
 	p.cursorPosition = len(p.model.GetText())
+	p.suggestMode = defaultSuggestMode
+	p.spacer = defaultSpacer
+	p.hasScrolled = false
 	p.model.Notify(false)
 }
 
 func (p *Prompt) update(text, suggestion string) {
 	p.Clear()
-	p.hasScrolled = false
 	p.write(text, suggestion)
 }
 
@@ -288,7 +357,7 @@ func (p *Prompt) suggest(text, suggestion string) {
 
 func (p *Prompt) Draw(screen tcell.Screen) {
 	p.TextView.Draw(screen)
-	if p.cursorPosition >= 0 {
+	if p.suggestMode == model.SuggestAutoComplete && p.cursorPosition >= 0 {
 		x, y, _, height := p.GetInnerRect()
 		screen.ShowCursor(x+p.spacer+p.cursorPosition, y+height-1)
 	} else {
@@ -296,47 +365,45 @@ func (p *Prompt) Draw(screen tcell.Screen) {
 	}
 }
 
-func (p *Prompt) formatSuggest(text, suggest string, withColor bool) string {
+func (p *Prompt) formatSuggest(text string, suggest string, withColor bool) string {
 	if text == suggest || text != "" && suggest == "" {
 		return text
 	}
+	txt := text
 	if text == "" && suggest != "" {
-		txt := suggest
+		txt = suggest
 		if withColor {
 			txt = fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, txt)
 		}
-		return txt
-	}
-
-	matchIndex := strings.Index(suggest, text)
-	txt := text
-	if matchIndex != -1 {
-		left := suggest[:matchIndex]
-		if withColor && matchIndex > 0 {
-			left = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[:matchIndex])
-		}
-		right := suggest[matchIndex+len(text):]
-		if withColor && matchIndex < len(suggest)-1 {
-			right = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[matchIndex+len(text):])
-		}
-		txt = left + text + right
 	} else {
-		if withColor {
-			txt += fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, suggest)
+		matchIndex := strings.Index(suggest, text)
+		if matchIndex != -1 {
+			left := suggest[:matchIndex]
+			if withColor && matchIndex > 0 {
+				left = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[:matchIndex])
+			}
+			right := suggest[matchIndex+len(text):]
+			if withColor && matchIndex < len(suggest)-1 {
+				right = fmt.Sprintf("[%s::b]%s[-::]", p.styles.K9s.Prompt.SuggestColor, suggest[matchIndex+len(text):])
+			}
+			txt = left + text + right
 		} else {
-			txt += suggest
+			if withColor {
+				txt += fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, suggest)
+			} else {
+				txt += suggest
+			}
 		}
 	}
 	return txt
 }
 
 func (p *Prompt) write(text, suggest string) {
-	p.SetCursorIndex(p.spacer + len(text))
 	txt := text
 	if suggest != "" {
 		txt = p.formatSuggest(text, suggest, true)
 	}
-	fmt.Fprintf(p, defaultPrompt, p.icon, txt)
+	fmt.Fprintf(p, p.prompt, p.icon, txt)
 }
 
 // ----------------------------------------------------------------------------

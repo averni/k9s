@@ -464,9 +464,9 @@ func (a *App) switchContext(name string) error {
 		a.Flash().Infof("Switching context to %s", name)
 		a.ReloadStyles(name)
 		a.gotoResource(a.Config.ActiveView(), "", true)
-		a.cmdHistory.Pop()
 		a.clusterModel.Reset(a.factory)
-		a.cmdHistory.Pop()
+		a.cmdHistory.Clear()
+		a.filterHistory.Clear()
 	}
 
 	return nil

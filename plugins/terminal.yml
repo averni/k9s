@@ -1,0 +1,19 @@
+# Starship custom command plugin: https://starship.rs/config/#custom-commands
+# [custom.k9sterminal]
+# when = "test $ISK9SSHELL == y"
+# symbol = "🐶"
+# style = "bold red"
+# format = 'inside [$symbol $output]($style)'
+
+plugin:
+  terminal:
+    shortCut: t
+    description: "Terminal"
+    confirm: false
+    background: false
+    scopes:
+    - all
+    command: sh
+    args:
+    - -c
+    - "ISK9SSHELL=y KUBERNETES_NAMESPACE=$NAMESPACE KUBERNETES_CLUSTER=$CLUSTER KUBECONTEXT=$CONTEXT $SHELL"

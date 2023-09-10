@@ -48,6 +48,11 @@ func (y *YAML) GetPath() string {
 	return y.path
 }
 
+// GetResource returns the active resource.
+func (y *YAML) GetResource() string {
+	return y.gvr.R()
+}
+
 // SetOptions toggle model options.
 func (y *YAML) SetOptions(ctx context.Context, opts ViewerToggleOpts) {
 	y.options = opts

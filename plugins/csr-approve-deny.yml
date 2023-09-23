@@ -1,0 +1,25 @@
+plugin:
+  #--- Approve/Deny CSR
+  # See https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#approval-rejection
+  csr-approve:
+    shortCut: Shift-A
+    description: Approve
+    scopes:
+      - csr
+    command: bash
+    background: true
+    confirm: true
+    args:
+      - -c
+      - "kubectl certificate approve $NAME"
+  csv-deny:
+    shortCut: Shift-D
+    description: Deny
+    scopes:
+      - csr
+    command: bash
+    background: true
+    confirm: true
+    args:
+      - -c
+      - "kubectl certificate deny $NAME"

@@ -126,7 +126,7 @@ func rbacViewers(vv MetaViewers) {
 		viewerFn: NewGroup,
 	}
 	vv[client.NewGVR("rbac.authorization.k8s.io/v1/clusterroles")] = MetaViewer{
-		enterFn: showRules,
+		viewerFn: NewClusterRole,
 	}
 	vv[client.NewGVR("rbac.authorization.k8s.io/v1/roles")] = MetaViewer{
 		enterFn: showRules,

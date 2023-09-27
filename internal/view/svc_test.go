@@ -166,6 +166,14 @@ func init() {
 		Verbs:        []string{"get", "list", "watch", "delete"},
 		Categories:   []string{"k9s"},
 	})
+	dao.MetaAccess.RegisterMeta("rbac.authorization.k8s.io/v1/clusterroles", metav1.APIResource{
+		Name:         "clusterroles",
+		SingularName: "clusterrole",
+		Namespaced:   true,
+		Kind:         "ClusterRoles",
+		Verbs:        []string{"get", "list", "watch", "delete"},
+		Categories:   []string{"k9s"},
+	})
 }
 
 func TestServiceNew(t *testing.T) {

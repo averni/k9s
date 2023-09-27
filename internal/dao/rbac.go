@@ -5,6 +5,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/derailed/k9s/internal"
@@ -123,13 +124,7 @@ func (r *Rbac) loadRoleBinding(path string) ([]runtime.Object, error) {
 
 func (r *Rbac) loadClusterRole(path string) ([]runtime.Object, error) {
 	log.Debug().Msgf("LOAD-CR %q", path)
-	o, err := r.getFactory().Get(crGVR, path, true, labels.Everything())
-	if err != nil {
-		return nil, err
-	}
-
-	var cr rbacv1.ClusterRole
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &cr)
+	cr, err := r.LoadClusterRole(r.getFactory(), path)
 	if err != nil {
 		return nil, err
 	}
@@ -181,4 +176,20 @@ func parseRules(ns, binding string, rules []rbacv1.PolicyRule) render.Policies {
 	}
 
 	return pp
+}
+
+// LoadClusterRoleBinding loads a clusterrole
+func (r *Rbac) LoadClusterRole(f Factory, fqn string) (*rbacv1.ClusterRole, error) {
+	o, err := f.Get(crGVR, fqn, true, labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	var cr rbacv1.ClusterRole
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &cr)
+	if err != nil {
+		return nil, errors.New("expecting ClusterRole resource")
+	}
+
+	return &cr, nil
 }

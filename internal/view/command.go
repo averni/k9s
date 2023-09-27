@@ -200,6 +200,12 @@ func (c *Command) specialCmd(cmd, path string) bool {
 	case "a", "alias":
 		c.app.aliasCmd(nil)
 		return true
+	case "k9sconfig-set":
+		err := c.app.configSetCmd(cmds[1:])
+		if err != nil {
+			c.app.Flash().Err(err)
+		}
+		return true
 	case "x", "xray":
 		if err := c.xrayCmd(cmd); err != nil {
 			c.app.Flash().Err(err)

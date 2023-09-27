@@ -670,6 +670,22 @@ func (a *App) aliasCmd(evt *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+func (a *App) configSetCmd(kvstr []string) error {
+	if len(kvstr) != 2 {
+		return fmt.Errorf("Invalid config key/value pair %q", kvstr)
+	}
+	key, value := kvstr[0], kvstr[1]
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+
+	notes, err := a.Config.SetFromPath(key, value)
+	if err != nil {
+		return err
+	}
+	a.Flash().Infof(fmt.Sprintf("Setting %s to %s done! %s", key, value, notes))
+	return nil
+}
+
 func (a *App) gotoResource(cmd, path string, clearStack bool) {
 	a.cmdHistory.Push(cmd)
 

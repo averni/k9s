@@ -147,6 +147,7 @@ func (a *Aliases) loadDefaultAliases() {
 
 	a.declare("help", "h", "?")
 	a.declare("quit", "q", "q!", "qa", "Q")
+	a.declare("k9sconfig-set")
 	a.declare("aliases", "alias", "a")
 	a.declare("popeye", "pop")
 	a.declare("helm", "charts", "chart", "hm")

@@ -8,6 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+<<<<<<< HEAD
+=======
+	"strconv"
+>>>>>>> c9f2ff17 (feat(prompt): add k9sconfig-set command to update few k9s configs without restarting [WIP])
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -299,6 +303,13 @@ func YamlExtension(path string) string {
 	return result
 }
 
+// SetFromPath sets a config value from a dot path and value pair
+// e.g. "logger.tail" "10"
+// TODO: This is a temporary hack to allow for dynamic config changes without needs of reflection.
+func (c *Config) SetFromPath(path string, value string) (string, error) {
+	return NewConfigSetter(c).Set(path, value)
+}
+
 // ----------------------------------------------------------------------------
 // Helpers...
 
@@ -309,4 +320,58 @@ func isSet(s *string) bool {
 func isYamlFile(file string) bool {
 	ext := filepath.Ext(file)
 	return ext == ".yml" || ext == ".yaml"
+}
+
+type ConfigSetter struct {
+	setterMap map[string]func(string) (string, error)
+}
+
+func NewConfigSetter(c *Config) *ConfigSetter {
+	return &ConfigSetter{
+		setterMap: map[string]func(string) (string, error){
+			"refreshrate": func(v string) (string, error) {
+				refreshRate, err := strconv.Atoi(v)
+				if err != nil {
+					return "", fmt.Errorf("Invalid refresh rate %q", v)
+				}
+				c.K9s.OverrideRefreshRate(refreshRate)
+				return "Changes will be applied on next page", nil
+			},
+			"screendumpdir": func(v string) (string, error) {
+				if _, err := os.Stat(v); err != nil {
+					return "", fmt.Errorf("Invalid screen dump dir %q", v)
+				}
+				c.K9s.OverrideScreenDumpDir(v)
+				return "", nil
+			},
+			"logger.tail": func(v string) (string, error) {
+				lines, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return "", fmt.Errorf("Invalid tail lines %q", v)
+				}
+				c.K9s.Logger.TailCount = lines
+				return "", nil
+			},
+		},
+	}
+}
+func (c *ConfigSetter) GetConfigs() []string {
+	var configs []string
+	for k := range c.setterMap {
+		configs = append(configs, k)
+	}
+	return configs
+}
+
+func (c *ConfigSetter) Set(path string, value string) (string, error) {
+	if path == "" || value == "" {
+		return "", fmt.Errorf("Invalid config key/value pair %q/%q", path, value)
+	}
+
+	cfgSetter, ok := c.setterMap[strings.ToLower(path)]
+	if !ok {
+		return "", fmt.Errorf("Invalid config key %q", path)
+	}
+
+	return cfgSetter(value)
 }

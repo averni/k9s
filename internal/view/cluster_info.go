@@ -108,11 +108,11 @@ func (c *ClusterInfo) ClusterInfoChanged(prev, curr model.ClusterMeta) {
 		row := c.setCell(0, curr.Context)
 		row = c.setCell(row, curr.Cluster)
 		row = c.setCell(row, curr.User)
+		k9sInfo := curr.K9sVer
 		if curr.K9sLatest != "" {
-			row = c.setCell(row, fmt.Sprintf("%s ⚡️[cadetblue::b]%s", curr.K9sVer, curr.K9sLatest))
-		} else {
-			row = c.setCell(row, curr.K9sVer)
+			k9sInfo = fmt.Sprintf("%s ⚡️[cadetblue::b]%s", curr.K9sVer, curr.K9sLatest)
 		}
+		row = c.setCell(row, fmt.Sprintf("%s [white::b]🗘 [cadetblue::b]%vs", k9sInfo, c.app.Config.K9s.GetRefreshRate()))
 		row = c.setCell(row, curr.K8sVer)
 		if c.hasMetrics() {
 			row = c.setCell(row, ui.AsPercDelta(prev.Cpu, curr.Cpu))

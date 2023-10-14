@@ -26,6 +26,7 @@ type K9s struct {
 	NoIcons             bool                `yaml:"noIcons"`
 	SkipLatestRevCheck  bool                `yaml:"skipLatestRevCheck"`
 	Logger              *Logger             `yaml:"logger"`
+	History             *History            `yaml:"history,omitempty"`
 	Autocomplete        *Autocomplete       `yaml:"autocomplete,omitempty"`
 	CurrentContext      string              `yaml:"currentContext"`
 	CurrentCluster      string              `yaml:"currentCluster"`
@@ -49,6 +50,7 @@ func NewK9s() *K9s {
 		RefreshRate:   defaultRefreshRate,
 		MaxConnRetry:  defaultMaxConnRetry,
 		Logger:        NewLogger(),
+		History:       NewHistory(),
 		Autocomplete:  NewAutocomplete(),
 		Clusters:      make(map[string]*Cluster),
 		Thresholds:    NewThreshold(),
@@ -244,6 +246,10 @@ func (k *K9s) Validate(c client.Connection, ks KubeSettings) {
 	} else {
 		k.Logger.Validate(c, ks)
 	}
+	if k.History == nil {
+		k.History = NewHistory()
+	}
+	k.History.Validate(c, ks)
 
 	if k.Autocomplete == nil {
 		k.Autocomplete = NewAutocomplete()

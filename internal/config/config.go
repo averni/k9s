@@ -239,6 +239,9 @@ func (c *Config) Load(path string) error {
 	if c.K9s.Logger == nil {
 		c.K9s.Logger = NewLogger()
 	}
+	if c.K9s.History == nil {
+		c.K9s.History = NewHistory()
+	}
 	if c.K9s.Autocomplete == nil {
 		c.K9s.Autocomplete = NewAutocomplete()
 	}

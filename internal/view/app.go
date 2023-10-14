@@ -61,8 +61,8 @@ type App struct {
 func NewApp(cfg *config.Config) *App {
 	a := App{
 		App:           ui.NewApp(cfg, cfg.K9s.CurrentContext),
-		cmdHistory:    model.NewHistory(model.MaxHistory),
-		filterHistory: model.NewHistory(model.MaxHistory),
+		cmdHistory:    model.NewHistory(cfg.K9s.History.MaxHistory),
+		filterHistory: model.NewHistory(cfg.K9s.History.MaxHistory),
 		Content:       NewPageStack(),
 	}
 
@@ -119,6 +119,9 @@ func (a *App) Init(version string, rate int) error {
 
 	a.layout(ctx)
 	a.initSignals()
+
+	a.cmdHistory.SetLimit(a.Config.K9s.History.MaxHistory)
+	a.filterHistory.SetLimit(a.Config.K9s.History.MaxHistory)
 
 	return nil
 }

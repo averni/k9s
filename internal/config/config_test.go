@@ -298,6 +298,8 @@ var expectedConfig = `k9s:
     fullScreenLogs: false
     textWrap: false
     showTime: false
+  history:
+    maxHistory: 20
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m
@@ -403,6 +405,8 @@ var resetConfig = `k9s:
     fullScreenLogs: false
     textWrap: false
     showTime: false
+  history:
+    maxHistory: 20
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m

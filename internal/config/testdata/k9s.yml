@@ -5,6 +5,8 @@ k9s:
   logger:
     tail: 200
     buffer: 2000
+  history:
+    maxHistory: 20
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m

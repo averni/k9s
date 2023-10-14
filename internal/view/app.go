@@ -167,11 +167,13 @@ func (a *App) updateSuggestion(s model.Autocompleter) {
 
 func (a *App) suggestCommand() model.SuggestionFunc {
 	promptAutocompleter := model.NewPromptAutocompleter(a.updateSuggestion, a.Config.K9s.Autocomplete.RefreshRateDuration)
+	promptAutocompleter.Index("k9sconfig-set", config.NewConfigSetter(a.Config).GetConfigPaths())
 
 	a.CmdBuff().AddListenerWithPriority(promptAutocompleter, 3)
 	a.CmdBuff().AddSuggestModeListener(promptAutocompleter)
 	a.cmdHistory.AddListener(promptAutocompleter)
 	a.clusterModel.AddListener(promptAutocompleter)
+
 	return func(s string, suggestMode model.SuggestMode) (entries sort.StringSlice) {
 		return promptAutocompleter.Suggest(s)
 	}

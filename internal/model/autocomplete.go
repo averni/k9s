@@ -367,6 +367,7 @@ type PromptAutocompleter struct {
 	cmdHistoryTst *TernarySearchTree
 	aliasTst      *TernarySearchTree
 	namespacesTst *TernarySearchTree
+	configSetTst  *TernarySearchTree
 
 	mode            SuggestMode
 	refreshRate     time.Duration
@@ -383,6 +384,7 @@ func NewPromptAutocompleter(updateFn UpdateFn, refreshRate time.Duration) *Promp
 		cmdHistoryTst:   NewTernarySearchTree(),
 		aliasTst:        NewTernarySearchTree(),
 		namespacesTst:   NewTernarySearchTree(),
+		configSetTst:    NewTernarySearchTree(),
 		mode:            SuggestAutoComplete,
 		updateFn:        updateFn,
 		refreshRate:     refreshRate,
@@ -414,6 +416,8 @@ func (p *PromptAutocompleter) Index(name string, words []string) {
 		p.aliasTst.Sync(words)
 	case "namespaces":
 		p.namespacesTst.Sync(words)
+	case "k9sconfig-set":
+		p.configSetTst.Sync(words)
 	}
 }
 
@@ -529,6 +533,8 @@ func (p *PromptAutocompleter) Autocomplete(text string) sort.StringSlice {
 		var targetTst *TernarySearchTree
 		if p.isResourceNamepaced(terms[0]) {
 			targetTst = p.namespacesTst
+		} else if terms[0] == "k9sconfig-set" {
+			targetTst = p.configSetTst
 		} else {
 			break
 		}

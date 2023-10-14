@@ -8,10 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-<<<<<<< HEAD
-=======
 	"strconv"
->>>>>>> c9f2ff17 (feat(prompt): add k9sconfig-set command to update few k9s configs without restarting [WIP])
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -355,7 +352,7 @@ func NewConfigSetter(c *Config) *ConfigSetter {
 		},
 	}
 }
-func (c *ConfigSetter) GetConfigs() []string {
+func (c *ConfigSetter) GetConfigPaths() []string {
 	var configs []string
 	for k := range c.setterMap {
 		configs = append(configs, k)

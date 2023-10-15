@@ -13,6 +13,12 @@ const (
 	SuggestFullText
 )
 
+const (
+	dirtyThreshold       = 0.33
+	dirtyMinLen          = 100
+	spellCheckMinWordLen = 3
+)
+
 // ----------------------------------------------------------------------------
 // TernarySearchTree data structures
 
@@ -300,15 +306,13 @@ func (t *TernarySearchTree) Autocomplete(prefix string, sortBy sortMode) []strin
 	return suggestions
 }
 
-const DIRTY_THRESHOLD = 0.33
-
 // Sync synchronizes the tree with the given words
 func (t *TernarySearchTree) Sync(words []string) {
 	if len(words) == 0 {
 		t.Reset()
 		return
 	}
-	if t.dirty > uint(float64(t.length)*DIRTY_THRESHOLD) {
+	if t.length > dirtyMinLen && t.dirty > uint(float64(t.length)*dirtyThreshold) {
 		t.Reset()
 	}
 	indexed := t.Words()
@@ -372,6 +376,7 @@ type PromptAutocompleter struct {
 	mode            SuggestMode
 	refreshRate     time.Duration
 	updateFn        UpdateFn
+	spellCheck      bool
 	lastRefreshTime time.Time
 	cluster         string
 	context         string
@@ -379,7 +384,7 @@ type PromptAutocompleter struct {
 	refreshMx       sync.RWMutex
 }
 
-func NewPromptAutocompleter(updateFn UpdateFn, refreshRate time.Duration) *PromptAutocompleter {
+func NewPromptAutocompleter(updateFn UpdateFn, refreshRate time.Duration, spellCheck bool) *PromptAutocompleter {
 	return &PromptAutocompleter{
 		cmdHistoryTst:   NewTernarySearchTree(),
 		aliasTst:        NewTernarySearchTree(),
@@ -388,6 +393,7 @@ func NewPromptAutocompleter(updateFn UpdateFn, refreshRate time.Duration) *Promp
 		mode:            SuggestAutoComplete,
 		updateFn:        updateFn,
 		refreshRate:     refreshRate,
+		spellCheck:      spellCheck,
 		lastRefreshTime: time.Now().Add(-2 * refreshRate * time.Second),
 	}
 }
@@ -493,6 +499,18 @@ func (p *PromptAutocompleter) Search(text string) sort.StringSlice {
 
 // ----------------------------------------------------------------------------
 
+func (p *PromptAutocompleter) checkSpelling(tst *TernarySearchTree, word string, prefix string) []string {
+	candidates := NewNaiveSpellChecker(tst, spellCheckMinWordLen).Candidates(word)
+	if len(candidates) > 0 {
+		entries := make([]string, len(candidates))
+		for i, candidate := range candidates {
+			entries[i] = "#" + prefix + candidate.Word + "#" + prefix + candidate.Suggestion
+		}
+		return entries
+	}
+	return nil
+}
+
 // Autocomplete returns all terms that start with prefix.
 func (p *PromptAutocompleter) Autocomplete(text string) sort.StringSlice {
 	p.mx.RLock()
@@ -524,12 +542,19 @@ func (p *PromptAutocompleter) Autocomplete(text string) sort.StringSlice {
 		// autocomplete aliases only if there is no match in history
 		if len(entries) == 0 {
 			entries = append(entries, p.aliasTst.Autocomplete(text, sortByWord)...)
+
+			// spell check aliases
+			if p.spellCheck && len(entries) == 0 {
+				entries = p.checkSpelling(p.aliasTst, text, "")
+			}
 		}
+
 	case 2:
 		// don't autocomplete for blanks after the second term
 		if len(terms[1]) > 0 && text[len(text)-1] == ' ' {
 			break
 		}
+
 		var targetTst *TernarySearchTree
 		if p.isResourceNamepaced(terms[0]) {
 			targetTst = p.namespacesTst
@@ -538,6 +563,7 @@ func (p *PromptAutocompleter) Autocomplete(text string) sort.StringSlice {
 		} else {
 			break
 		}
+
 		if terms[1] == "" {
 			entries = append(entries, targetTst.Words()...)
 		} else {
@@ -550,9 +576,15 @@ func (p *PromptAutocompleter) Autocomplete(text string) sort.StringSlice {
 						entries = append(entries, suggestion)
 					}
 				}
+			} else if p.spellCheck {
+				// spell check second term
+				blankIndex := strings.LastIndex(text, " ")
+				entries = p.checkSpelling(targetTst, terms[1], text[:blankIndex+1])
 			}
 		}
+
 	}
+
 	return entries
 }
 

@@ -303,6 +303,7 @@ var expectedConfig = `k9s:
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m
+    spellCheck: false
   currentContext: blee
   currentCluster: blee
   keepMissingClusters: false
@@ -410,6 +411,7 @@ var resetConfig = `k9s:
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m
+    spellCheck: false
   currentContext: blee
   currentCluster: blee
   keepMissingClusters: false

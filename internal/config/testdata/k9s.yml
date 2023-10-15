@@ -10,6 +10,7 @@ k9s:
   autocomplete:
     autocompleteNamespace: true
     refreshRate: 2m
+    spellCheck: false
   currentContext: minikube
   currentCluster: minikube
   clusters:

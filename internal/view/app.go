@@ -166,7 +166,11 @@ func (a *App) updateSuggestion(s model.Autocompleter) {
 }
 
 func (a *App) suggestCommand() model.SuggestionFunc {
-	promptAutocompleter := model.NewPromptAutocompleter(a.updateSuggestion, a.Config.K9s.Autocomplete.RefreshRateDuration)
+	promptAutocompleter := model.NewPromptAutocompleter(
+		a.updateSuggestion,
+		a.Config.K9s.Autocomplete.RefreshRateDuration,
+		a.Config.K9s.Autocomplete.SpellCheck,
+	)
 	promptAutocompleter.Index("k9sconfig-set", config.NewConfigSetter(a.Config).GetConfigPaths())
 
 	a.CmdBuff().AddListenerWithPriority(promptAutocompleter, 3)

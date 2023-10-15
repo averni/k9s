@@ -16,6 +16,7 @@ const (
 type Autocomplete struct {
 	AutocompleteNamespace bool          `yaml:"autocompleteNamespace"`
 	RefreshRate           string        `yaml:"refreshRate"`
+	SpellCheck            bool          `yaml:"spellCheck"`
 	RefreshRateDuration   time.Duration `yaml:"-"`
 }
 
@@ -24,6 +25,7 @@ func NewAutocomplete() *Autocomplete {
 	return &Autocomplete{
 		AutocompleteNamespace: true,
 		RefreshRate:           DefaultAutocompleteRefreshRate,
+		SpellCheck:            false,
 	}
 }
 

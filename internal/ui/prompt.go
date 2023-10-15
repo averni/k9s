@@ -385,6 +385,14 @@ func (p *Prompt) formatSuggest(text string, suggest string, withColor bool) stri
 	if text == suggest || text != "" && suggest == "" {
 		return text
 	}
+	if suggest[0] == '#' {
+		splitPos := strings.Index(suggest[1:], "#")
+		if splitPos == -1 {
+			splitPos = len(text)
+		}
+		text = suggest[1 : splitPos+1]
+		suggest = suggest[splitPos+2:]
+	}
 	txt := text
 	if text == "" && suggest != "" {
 		txt = suggest

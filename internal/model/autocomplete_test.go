@@ -94,7 +94,7 @@ func TestNewPromptAutocompleter(t *testing.T) {
 		s.Index("namespaces", []string{"ns1", "ns2"})
 	}
 
-	promptAutocompleter := model.NewPromptAutocompleter(updateFn, 200)
+	promptAutocompleter := model.NewPromptAutocompleter(updateFn, 200, true)
 	fishBuff := model.NewFishBuff('>', model.CommandBuffer)
 	fishBuff.AddListenerWithPriority(promptAutocompleter, 3)
 	fishBuff.AddSuggestModeListener(promptAutocompleter)
@@ -120,6 +120,8 @@ func TestNewPromptAutocompleter(t *testing.T) {
 		fishBuff.Reset()
 	}
 }
+
+// ----------------------------------------------------------------------------
 
 func historyForBenchmarks(sorted bool) []string {
 

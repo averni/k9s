@@ -90,6 +90,9 @@ type PromptModel interface {
 
 	// DeleteAt deletes a char at a given position.
 	DeleteAt(int)
+
+	// DeleteRange deletes a range of chars.
+	DeleteRange(int, int)
 }
 
 // Prompt captures users free from command input.
@@ -175,9 +178,22 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	// nolint:exhaustive
 	switch evt.Key() {
 	case tcell.KeyBackspace2, tcell.KeyBackspace, tcell.KeyDelete:
-		if p.cursorPosition > 0 && p.cursorPosition <= len(p.model.GetText()) {
-			p.model.DeleteAt(p.cursorPosition - 1)
-			p.cursorPosition--
+		if evt.Modifiers() == tcell.ModAlt {
+			text := p.model.GetText()
+			if p.cursorPosition > 0 && p.cursorPosition <= len(text) {
+				cursorPosition := p.cursorPosition
+				for cursorPosition > 0 && text[cursorPosition-1] == ' ' {
+					cursorPosition--
+				}
+				lastBlank := strings.LastIndex(text[:cursorPosition], " ") + 1
+				p.model.DeleteRange(lastBlank, p.cursorPosition-1)
+				p.cursorPosition = lastBlank
+			}
+		} else {
+			if p.cursorPosition > 0 && p.cursorPosition <= len(p.model.GetText()) {
+				p.model.DeleteAt(p.cursorPosition - 1)
+				p.cursorPosition--
+			}
 		}
 	case tcell.KeyRune:
 		if p.cursorPosition < len(p.model.GetText()) {

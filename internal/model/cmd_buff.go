@@ -234,6 +234,37 @@ func (c *CmdBuff) DeleteAt(index int) {
 	}()
 }
 
+// DeleteRange removes the characters in the specified range.
+func (c *CmdBuff) DeleteRange(start, end int) {
+	if c.Empty() {
+		return
+	}
+	if start < 0 || start >= len(c.buff) {
+		return
+	}
+	if end < 0 || end >= len(c.buff) {
+		return
+	}
+	c.mx.Lock()
+	{
+		c.buff, c.suggestion = append(c.buff[:start], c.buff[end+1:]...), ""
+	}
+	c.mx.Unlock()
+	c.fireBufferChanged(c.GetText(), c.GetSuggestion())
+	if c.hasCancel() {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	c.setCancel(cancel)
+
+	go func() {
+		<-ctx.Done()
+		c.fireBufferCompleted(c.GetText(), c.GetSuggestion())
+		c.resetCancel()
+	}()
+}
+
 // ClearText clears out command buffer.
 func (c *CmdBuff) ClearText(fire bool) {
 	c.mx.Lock()

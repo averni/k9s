@@ -461,6 +461,8 @@ func (a *App) switchContext(ci *cmd.Interpreter, force bool) error {
 	a.Halt()
 	defer a.Resume()
 	{
+		activeView := a.Config.ActiveView()
+		ns := a.Config.ActiveNamespace()
 		a.Config.Reset()
 		ct, err := a.Config.ActivateContext(contextName)
 		if err != nil {
@@ -470,12 +472,11 @@ func (a *App) switchContext(ci *cmd.Interpreter, force bool) error {
 			ct.Namespace.Active = cns
 		}
 
-		p := cmd.NewInterpreter(a.Config.ActiveView())
+		p := cmd.NewInterpreter(activeView)
 		p.ResetContextArg()
 		if p.IsContextCmd() {
 			a.Config.SetActiveView(client.PodGVR.String())
 		}
-		ns := a.Config.ActiveNamespace()
 		if !a.Conn().IsValidNamespace(ns) {
 			slog.Warn("Unable to validate namespace", slogs.Namespace, ns)
 			if err := a.Config.SetActiveNamespace(ns); err != nil {
@@ -510,8 +511,8 @@ func (a *App) switchContext(ci *cmd.Interpreter, force bool) error {
 		)
 		a.Flash().Infof("Switching context to %q::%q", contextName, ns)
 		a.ReloadStyles()
-		a.gotoResource(a.Config.ActiveView(), "", true, true)
 
+		a.gotoResource(activeView, "", true, true)
 		if a.clusterModel != nil {
 			a.clusterModel.Reset(a.factory)
 		}

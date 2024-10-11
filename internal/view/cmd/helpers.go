@@ -58,7 +58,22 @@ func SuggestSubCommand(command string, namespaces client.NamespaceNames, context
 		if !ok {
 			return nil
 		}
+
 		suggests = completeCtx(n, contexts)
+
+		if len(suggests) > 0 {
+			if n == "" {
+				initialBlanks := false
+				if len(p.line) > 0 {
+					initialBlanks = p.line[len(p.line)-1] == ' '
+				}
+				if !initialBlanks {
+					for i := range suggests {
+						suggests[i] = " " + suggests[i]
+					}
+				}
+			}
+		}
 
 	case p.HasNS():
 		if n, ok := p.HasContext(); ok {
@@ -103,10 +118,6 @@ func completeCtx(s string, contexts []string) []string {
 	var suggests []string
 	for _, ctxName := range contexts {
 		if suggest, ok := ShouldAddSuggest(s, ctxName); ok {
-			if s == "" {
-				suggests = append(suggests, " "+suggest)
-				continue
-			}
 			suggests = append(suggests, suggest)
 		}
 	}

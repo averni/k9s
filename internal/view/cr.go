@@ -25,10 +25,11 @@ func NewClusterRole(gvr client.GVR) ResourceViewer {
 	return &v
 }
 
-func (c *ClusterRole) bindKeys(aa ui.KeyActions) {
-	aa.Add(ui.KeyActions{
-		ui.KeyX: ui.NewKeyAction("Expand Aggregation", c.showAggregation(), true),
-	})
+func (c *ClusterRole) bindKeys(aa *ui.KeyActions) {
+	if c.App().Config.K9s.IsReadOnly() {
+		return
+	}
+	aa.Add(ui.KeyX, ui.NewKeyAction("Expand Aggregation", c.showAggregation(), true))
 }
 
 func showClusterRoles(app *App, path string, sel *metav1.LabelSelector) {

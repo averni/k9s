@@ -5,6 +5,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/derailed/k9s/internal/config"
@@ -72,19 +73,29 @@ type PromptModel interface {
 
 	// Delete deletes the last prompt character.
 	Delete()
+
+	// Insert inserts a new char at a given cursor position.
+	Insert(rune, int)
+
+	// DeleteAt deletes a char at a given position.
+	DeleteAt(int)
+
+	// DeleteRange deletes a range of chars.
+	DeleteRange(int, int)
 }
 
 // Prompt captures users free from command input.
 type Prompt struct {
 	*tview.TextView
 
-	app     *App
-	noIcons bool
-	icon    rune
-	styles  *config.Styles
-	model   PromptModel
-	spacer  int
-	mx      sync.RWMutex
+	app            *App
+	noIcons        bool
+	icon           rune
+	styles         *config.Styles
+	model          PromptModel
+	spacer         int
+	cursorPosition int
+	mx             sync.RWMutex
 }
 
 // NewPrompt returns a new command view.
@@ -108,6 +119,7 @@ func NewPrompt(app *App, noIcons bool, styles *config.Styles) *Prompt {
 	p.SetTextColor(styles.K9s.Prompt.FgColor.Color())
 	styles.AddListener(&p)
 	p.SetInputCapture(p.keyboard)
+	p.ShowCursor(true)
 
 	return &p
 }
@@ -150,21 +162,45 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	// nolint:exhaustive
 	switch evt.Key() {
 	case tcell.KeyBackspace2, tcell.KeyBackspace, tcell.KeyDelete:
-		p.model.Delete()
+		if evt.Modifiers() == tcell.ModAlt {
+			text := p.model.GetText()
+			if p.cursorPosition > 0 && p.cursorPosition <= len(text) {
+				cursorPosition := p.cursorPosition
+				for cursorPosition > 0 && text[cursorPosition-1] == ' ' {
+					cursorPosition--
+				}
+				lastBlank := strings.LastIndex(text[:cursorPosition], " ") + 1
+				p.model.DeleteRange(lastBlank, p.cursorPosition-1)
+				p.cursorPosition = lastBlank
+			}
+		} else {
+			if p.cursorPosition > 0 && p.cursorPosition <= len(p.model.GetText()) {
+				p.model.DeleteAt(p.cursorPosition - 1)
+				p.cursorPosition--
+			}
+		}
 
 	case tcell.KeyRune:
-		p.model.Add(evt.Rune())
+		if p.cursorPosition < len(p.model.GetText()) {
+			p.model.Insert(evt.Rune(), p.cursorPosition)
+		} else {
+			p.model.Add(evt.Rune())
+		}
+		p.cursorPosition++
 
 	case tcell.KeyEscape:
 		p.model.ClearText(true)
 		p.model.SetActive(false)
+		p.cursorPosition = 0
 
 	case tcell.KeyEnter, tcell.KeyCtrlE:
 		p.model.SetText(p.model.GetText(), "")
 		p.model.SetActive(false)
+		p.cursorPosition = 0
 
 	case tcell.KeyCtrlW, tcell.KeyCtrlU:
 		p.model.ClearText(true)
+		p.cursorPosition = 0
 
 	case tcell.KeyUp:
 		if s, ok := m.NextSuggestion(); ok {
@@ -180,7 +216,47 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		if s, ok := m.CurrentSuggestion(); ok {
 			p.model.SetText(p.model.GetText()+s, "")
 			m.ClearSuggestions()
+			p.cursorPosition = len(p.model.GetText())
+		} else {
+			if evt.Key() == tcell.KeyRight {
+				if evt.Modifiers() == tcell.ModCtrl {
+					cursorPosition := p.cursorPosition
+					for cursorPosition < len(p.model.GetText()) && p.model.GetText()[cursorPosition] == ' ' {
+						cursorPosition++
+					}
+					nextBlank := strings.Index(p.model.GetText()[cursorPosition:], " ")
+					if nextBlank == -1 {
+						nextBlank = len(p.model.GetText()) - cursorPosition
+					}
+					p.cursorPosition = cursorPosition + nextBlank
+				} else {
+					end := len(p.model.GetText())
+					if p.cursorPosition < end {
+						p.cursorPosition++
+					}
+				}
+			}
 		}
+
+	case tcell.KeyLeft:
+		if evt.Modifiers() == tcell.ModCtrl {
+			cursorPosition := p.cursorPosition
+			for cursorPosition > 0 && p.model.GetText()[cursorPosition-1] == ' ' {
+				cursorPosition--
+			}
+			lastBlank := strings.LastIndex(p.model.GetText()[:cursorPosition], " ") + 1
+			p.cursorPosition = lastBlank
+		} else {
+			if p.model.GetText() != "" && p.cursorPosition > 0 {
+				p.cursorPosition--
+			}
+		}
+
+	case tcell.KeyHome:
+		p.cursorPosition = 0
+
+	case tcell.KeyEnd:
+		p.cursorPosition = len(p.model.GetText())
 	}
 
 	return nil
@@ -206,6 +282,7 @@ func (p *Prompt) activate() {
 	p.SetCursorIndex(len(p.model.GetText()))
 	p.write(p.model.GetText(), p.model.GetSuggestion())
 	p.model.Notify(false)
+	p.cursorPosition = len(p.model.GetText())
 }
 
 func (p *Prompt) Clear() {
@@ -220,6 +297,8 @@ func (p *Prompt) Draw(sc tcell.Screen) {
 	defer p.mx.RUnlock()
 
 	p.TextView.Draw(sc)
+	x, y, _, height := p.GetInnerRect()
+	sc.ShowCursor(x+p.spacer+p.cursorPosition, y+height-1)
 }
 
 func (p *Prompt) update(text, suggestion string) {

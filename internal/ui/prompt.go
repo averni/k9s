@@ -5,6 +5,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/derailed/k9s/internal/config"
@@ -72,6 +73,79 @@ type PromptModel interface {
 
 	// Delete deletes the last prompt character.
 	Delete()
+
+	// Insert inserts a new char at a given cursor position.
+	Insert(rune, int)
+
+	// DeleteAt deletes a char at a given position.
+	DeleteAt(int)
+
+	// DeleteRange deletes a range of chars.
+	DeleteRange(int, int)
+}
+
+type Cursor struct {
+	Position int32
+}
+
+// MoveToLastWord move the cursor to the previous word.
+func (c *Cursor) MoveWordLeft(text string) int32 {
+	if text == "" || c.Position == 0 {
+		return 0
+	}
+
+	cursorPosition := c.Position
+	for cursorPosition > 0 && text[cursorPosition-1] == ' ' {
+		cursorPosition--
+	}
+	c.Position = int32(strings.LastIndex(text[:cursorPosition], " ") + 1)
+	return c.Position
+}
+
+// MoveLeft moves the cursor to the left by one character.
+func (c *Cursor) MoveLeft(text string) int32 {
+	if text == "" || c.Position == 0 {
+		return 0
+	}
+	c.Position--
+	return c.Position
+}
+
+// MoveRight moves the cursor to the right by one character.
+func (c *Cursor) MoveRight(text string) int32 {
+	if text == "" || c.Position >= int32(len(text)) {
+		return int32(len(text))
+	}
+	c.Position++
+	return c.Position
+}
+
+// MoveWordRight moves the cursor to the right by one word.
+func (c *Cursor) MoveWordRight(text string) int32 {
+	if text == "" || c.Position >= int32(len(text)) {
+		return int32(len(text))
+	}
+
+	cursorPosition := c.Position
+	for cursorPosition < int32(len(text)) && text[cursorPosition] == ' ' {
+		cursorPosition++
+	}
+	nextBlank := strings.Index(text[cursorPosition:], " ")
+	if nextBlank == -1 {
+		nextBlank = len(text) - int(cursorPosition)
+	}
+	c.Position = cursorPosition + int32(nextBlank)
+	return c.Position
+}
+
+// Reset resets the cursor position to 0.
+func (c *Cursor) Reset() {
+	c.Position = 0
+}
+
+// MoveEnd moves the cursor to the end of the text.
+func (c *Cursor) MoveEnd(text string) {
+	c.Position = int32(len(text))
 }
 
 // Prompt captures users free from command input.
@@ -85,6 +159,7 @@ type Prompt struct {
 	styles  *config.Styles
 	model   PromptModel
 	spacer  int
+	cursor  Cursor
 	mx      sync.RWMutex
 }
 
@@ -107,6 +182,7 @@ func NewPrompt(app *App, noIcons bool, styles *config.Styles) *Prompt {
 	p.SetBorderPadding(0, 0, 1, 1)
 	styles.AddListener(&p)
 	p.SetInputCapture(p.keyboard)
+	p.ShowCursor(true)
 
 	return &p
 }
@@ -149,21 +225,36 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	//nolint:exhaustive
 	switch evt.Key() {
 	case tcell.KeyBackspace2, tcell.KeyBackspace, tcell.KeyDelete:
-		p.model.Delete()
+		start, end := p.cursor.Position-1, p.cursor.Position-1
+		if evt.Modifiers() == tcell.ModAlt {
+			p.cursor.MoveWordLeft(p.model.GetText())
+			start = p.cursor.Position
+		} else {
+			p.cursor.MoveLeft(p.model.GetText())
+		}
+		p.model.DeleteRange(int(start), int(end))
 
 	case tcell.KeyRune:
-		p.model.Add(evt.Rune())
+		if int(p.cursor.Position) < len(p.model.GetText()) {
+			p.model.Insert(evt.Rune(), int(p.cursor.Position))
+		} else {
+			p.model.Add(evt.Rune())
+		}
+		p.cursor.MoveRight(p.model.GetText())
 
 	case tcell.KeyEscape:
 		p.model.ClearText(true)
 		p.model.SetActive(false)
+		p.cursor.Reset()
 
 	case tcell.KeyEnter, tcell.KeyCtrlE:
 		p.model.SetText(p.model.GetText(), "", true)
 		p.model.SetActive(false)
+		p.cursor.Reset()
 
 	case tcell.KeyCtrlW, tcell.KeyCtrlU:
 		p.model.ClearText(true)
+		p.cursor.Reset()
 
 	case tcell.KeyUp:
 		if s, ok := m.NextSuggestion(); ok {
@@ -179,7 +270,29 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		if s, ok := m.CurrentSuggestion(); ok {
 			p.model.SetText(p.model.GetText()+s, "", true)
 			m.ClearSuggestions()
+			p.cursor.MoveEnd(p.model.GetText())
+		} else {
+			if evt.Key() == tcell.KeyRight {
+				if evt.Modifiers() == tcell.ModCtrl {
+					p.cursor.MoveWordRight(p.model.GetText())
+				} else {
+					p.cursor.MoveRight(p.model.GetText())
+				}
+			}
 		}
+
+	case tcell.KeyLeft:
+		if evt.Modifiers() == tcell.ModCtrl {
+			p.cursor.MoveWordLeft(p.model.GetText())
+		} else {
+			p.cursor.MoveLeft(p.model.GetText())
+		}
+
+	case tcell.KeyHome:
+		p.cursor.Reset()
+
+	case tcell.KeyEnd:
+		p.cursor.MoveEnd(p.model.GetText())
 	}
 
 	return nil
@@ -205,6 +318,7 @@ func (p *Prompt) activate() {
 	p.SetCursorIndex(len(p.model.GetText()))
 	p.write(p.model.GetText(), p.model.GetSuggestion())
 	p.model.Notify(false)
+	p.cursor.MoveEnd(p.model.GetText())
 }
 
 func (p *Prompt) Clear() {
@@ -219,6 +333,8 @@ func (p *Prompt) Draw(sc tcell.Screen) {
 	defer p.mx.RUnlock()
 
 	p.TextView.Draw(sc)
+	x, y, _, height := p.GetInnerRect()
+	sc.ShowCursor(x+p.spacer+int(p.cursor.Position), y+height-1)
 }
 
 func (p *Prompt) update(text, suggestion string) {

@@ -120,7 +120,7 @@ func (c *Command) contextCmd(p *cmd.Interpreter, pushCmd bool) error {
 	return c.exec(p, gvr, c.componentFor(gvr, ct, v), true, pushCmd)
 }
 
-func (*Command) namespaceCmd(p *cmd.Interpreter) bool {
+func (c *Command) namespaceCmd(p *cmd.Interpreter) bool {
 	ns, ok := p.NSArg()
 	if !ok {
 		return false

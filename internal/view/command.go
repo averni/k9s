@@ -109,7 +109,17 @@ func (c *Command) namespaceCmd(p *cmd.Interpreter) bool {
 	}
 
 	if ns != "" {
-		_ = p.Reset("pod " + ns)
+		prevView := cmd.NewInterpreter(c.app.Config.ActiveView())
+		command := "pod"
+		if !prevView.IsContextCmd() &&
+			!prevView.IsDirCmd() &&
+			!prevView.IsHelpCmd() &&
+			!prevView.IsAliasCmd() &&
+			!prevView.IsXrayCmd() &&
+			!prevView.IsNamespaceCmd() {
+			command = prevView.Cmd()
+		}
+		_ = p.Reset(command + " " + ns)
 	}
 
 	return false

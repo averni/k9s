@@ -12,6 +12,7 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/render"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -98,12 +99,18 @@ func (c *Container) TailLogs(ctx context.Context, opts *LogOptions) ([]LogChan, 
 // Helpers...
 
 func makeContainerRes(kind string, idx int, co *v1.Container, po *v1.Pod, cmx *mv1beta1.ContainerMetrics) render.ContainerRes {
+	status := getContainerStatus(kind, co.Name, &po.Status)
+	age := getContainerAge(status)
+	if age == nil {
+		cts := po.GetCreationTimestamp()
+		age = &cts
+	}
 	return render.ContainerRes{
 		Idx:       kind + strconv.Itoa(idx+1),
 		Container: co,
-		Status:    getContainerStatus(kind, co.Name, &po.Status),
+		Status:    status,
 		MX:        cmx,
-		Age:       po.GetCreationTimestamp(),
+		Age:       *age,
 	}
 }
 
@@ -129,6 +136,17 @@ func getContainerStatus(kind, name string, status *v1.PodStatus) *v1.ContainerSt
 		}
 	}
 
+	return nil
+}
+
+func getContainerAge(s *v1.ContainerStatus) *metav1.Time {
+	if s.State.Running != nil {
+		return &s.State.Running.StartedAt
+	} else if s.State.Terminated != nil {
+		return &s.State.Terminated.StartedAt
+	} else if s.State.Waiting != nil && s.LastTerminationState.Terminated != nil {
+		return &s.LastTerminationState.Terminated.StartedAt
+	}
 	return nil
 }
 

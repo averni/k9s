@@ -107,14 +107,24 @@ func (c *Command) contextCmd(p *cmd.Interpreter, pushCmd bool) error {
 	return c.exec(p, gvr, c.componentFor(gvr, ct, v), true, pushCmd)
 }
 
-func (*Command) namespaceCmd(p *cmd.Interpreter) bool {
+func (c *Command) namespaceCmd(p *cmd.Interpreter) bool {
 	ns, ok := p.NSArg()
 	if !ok {
 		return false
 	}
 
 	if ns != "" {
-		_ = p.Reset("pod " + ns)
+		prevView := cmd.NewInterpreter(c.app.Config.ActiveView())
+		command := "pod"
+		if !prevView.IsContextCmd() &&
+			!prevView.IsDirCmd() &&
+			!prevView.IsHelpCmd() &&
+			!prevView.IsAliasCmd() &&
+			!prevView.IsXrayCmd() &&
+			!prevView.IsNamespaceCmd() {
+			command = prevView.Cmd()
+		}
+		_ = p.Reset(command + " " + ns)
 	}
 
 	return false

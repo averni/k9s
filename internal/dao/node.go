@@ -293,7 +293,7 @@ func FetchNodes(_ context.Context, f Factory, _ string) (*v1.NodeList, error) {
 		return nil, fmt.Errorf("user is not authorized to list nodes")
 	}
 
-	oo, err := f.List(client.NodeGVR, "", false, labels.Everything())
+	oo, err := f.List(client.NodeGVR, client.ClusterScope, false, labels.Everything())
 	if err != nil {
 		return nil, err
 	}

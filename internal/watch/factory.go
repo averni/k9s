@@ -22,15 +22,28 @@ import (
 
 const (
 	defaultResync   = 10 * time.Minute
-	defaultWaitTime = 500 * time.Millisecond
+	defaultWaitTime = 700 * time.Millisecond
+	// defaultIdleTime: Maximum time before we stop a namespaced factory if it has not been accessed.
+	// This is to prevent keeping informers alive when the user isn't interacting with any resources they are watching.
+	// Under normal circumstances (like k8s operators) keeping an informer alive
+	// forever is what we want.
+	// On k9s this strategy is not optimal since we deal with a lot of resources and every informer
+	// will keep syncing until the context is closed even if there are no active watchers,
+	// causing a higher resource usage, mostly network/memory, without any benefit.
+	// The default idle time is set below the default resync time in order to
+	// stop idle informers before the first resync kicks in.
+	defaultIdleTime      = defaultResync / 100 * 70
+	defaultMonitorTime   = 1 * time.Minute
+	debugInformerMetrics = true
 )
 
 // Factory tracks various resource informers.
 type Factory struct {
 	factories  map[string]di.DynamicSharedInformerFactory
 	client     client.Connection
-	stopChan   chan struct{}
 	forwarders Forwarders
+	stopChan   map[string]chan struct{}
+	monitor    *factoryMonitor
 	mx         sync.RWMutex
 }
 
@@ -40,6 +53,8 @@ func NewFactory(clt client.Connection) *Factory {
 		client:     clt,
 		factories:  make(map[string]di.DynamicSharedInformerFactory),
 		forwarders: NewForwarders(),
+		monitor:    nil,
+		stopChan:   make(map[string]chan struct{}),
 	}
 }
 
@@ -48,11 +63,16 @@ func (f *Factory) Start(ns string) {
 	f.mx.Lock()
 	defer f.mx.Unlock()
 
-	slog.Debug("Factory started", slogs.Namespace, ns)
-	f.stopChan = make(chan struct{})
-	for ns, fac := range f.factories {
-		slog.Debug("Starting factory for ns", slogs.Namespace, ns)
-		fac.Start(f.stopChan)
+	if _, ok := f.stopChan[ns]; !ok {
+		f.stopChan[ns] = make(chan struct{})
+	}
+	if _, ok := f.factories[ns]; ok {
+		f.factories[ns].Start(f.stopChan[ns])
+	}
+
+	if f.monitor == nil {
+		f.monitor = newFactoryMonitor(f, defaultIdleTime, defaultMonitorTime)
+		f.monitor.Start()
 	}
 }
 
@@ -61,10 +81,20 @@ func (f *Factory) Terminate() {
 	f.mx.Lock()
 	defer f.mx.Unlock()
 
-	if f.stopChan != nil {
-		close(f.stopChan)
-		f.stopChan = nil
+	if f.monitor != nil {
+		f.monitor.Stop()
+		f.monitor = nil
 	}
+
+	if f.stopChan != nil {
+		for ns, stopChan := range f.stopChan {
+			if stopChan != nil {
+				close(stopChan)
+			}
+			delete(f.stopChan, ns)
+		}
+	}
+
 	for k := range f.factories {
 		delete(f.factories, k)
 	}
@@ -87,25 +117,22 @@ func (f *Factory) List(gvr *client.GVR, ns string, wait bool, lbls labels.Select
 	} else {
 		oo, err = inf.Lister().ByNamespace(ns).List(lbls)
 	}
+	if err == nil {
+		if !f.monitor.HasSynced(inf) {
+			wait = true
+		}
+	}
+
 	if !wait || (wait && inf.Informer().HasSynced()) {
 		return oo, err
 	}
 
 	f.waitForCacheSync(ns)
+	f.monitor.Synced(inf)
 	if client.IsClusterScoped(ns) {
 		return inf.Lister().List(lbls)
 	}
 	return inf.Lister().ByNamespace(ns).List(lbls)
-}
-
-// HasSynced checks if given informer is up to date.
-func (f *Factory) HasSynced(gvr *client.GVR, ns string) (bool, error) {
-	inf, err := f.CanForResource(ns, gvr, client.ListAccess)
-	if err != nil {
-		return false, err
-	}
-
-	return inf.Informer().HasSynced(), nil
 }
 
 // Get retrieves a given resource.
@@ -125,11 +152,17 @@ func (f *Factory) Get(gvr *client.GVR, fqn string, wait bool, _ labels.Selector)
 	} else {
 		o, err = inf.Lister().ByNamespace(ns).Get(n)
 	}
+	if err == nil {
+		if !f.monitor.HasSynced(inf) {
+			wait = true
+		}
+	}
 	if !wait || (wait && inf.Informer().HasSynced()) {
 		return o, err
 	}
 
 	f.waitForCacheSync(ns)
+	f.monitor.Synced(inf)
 	if client.IsClusterScoped(ns) {
 		return inf.Lister().Get(n)
 	}
@@ -161,7 +194,7 @@ func (f *Factory) waitForCacheSync(ns string) {
 // WaitForCacheSync waits for all factories to update their cache.
 func (f *Factory) WaitForCacheSync() {
 	for ns, fac := range f.factories {
-		m := fac.WaitForCacheSync(f.stopChan)
+		m := fac.WaitForCacheSync(f.stopChan[ns])
 		for k, v := range m {
 			slog.Debug("CACHE `%q Loaded %t:%s",
 				slogs.Namespace, ns,
@@ -194,9 +227,17 @@ func (f *Factory) SetActiveNS(ns string) error {
 func (f *Factory) isClusterWide() bool {
 	f.mx.RLock()
 	defer f.mx.RUnlock()
-	_, ok := f.factories[client.BlankNamespace]
+	for _, namespace := range []string{
+		client.BlankNamespace,
+		client.NamespaceAll,
+		client.ClusterScope,
+	} {
+		if _, ok := f.factories[namespace]; ok {
+			return ok
+		}
+	}
 
-	return ok
+	return false
 }
 
 // CanForResource return an informer is user has access.
@@ -227,15 +268,16 @@ func (f *Factory) ForResource(ns string, gvr *client.GVR) (informers.GenericInfo
 		return inf, nil
 	}
 
-	f.mx.RLock()
-	defer f.mx.RUnlock()
-	fact.Start(f.stopChan)
+	slog.Debug("Starting informer factory", slogs.GVR, gvr, slogs.Namespace, ns)
+	f.Start(ns)
+	fact.Start(f.stopChan[ns])
 
+	f.monitor.Track(inf, gvr.AsResourceName(), ns)
 	return inf, nil
 }
 
 func (f *Factory) ensureFactory(ns string) (di.DynamicSharedInformerFactory, error) {
-	if client.IsClusterWide(ns) {
+	if client.IsAllNamespace(ns) {
 		ns = client.BlankNamespace
 	}
 	f.mx.Lock()
@@ -248,13 +290,19 @@ func (f *Factory) ensureFactory(ns string) (di.DynamicSharedInformerFactory, err
 	if err != nil {
 		return nil, err
 	}
+	actualNamespace := ns
+	if client.IsClusterWide(ns) {
+		actualNamespace = client.BlankNamespace
+	}
 	f.factories[ns] = di.NewFilteredDynamicSharedInformerFactory(
 		dial,
 		defaultResync,
-		ns,
+		actualNamespace,
 		nil,
 	)
-
+	if _, ok := f.stopChan[ns]; !ok {
+		f.stopChan[ns] = make(chan struct{})
+	}
 	return f.factories[ns], nil
 }
 
@@ -321,4 +369,33 @@ func (f *Factory) ValidatePortForwards() {
 			delete(f.forwarders, k)
 		}
 	}
+}
+
+// StopFactory stops a factory for a given namespace.
+// It closes the stop channel and deletes the factory.
+func (f *Factory) stopFactory(ns string) bool {
+	f.mx.Lock()
+	defer f.mx.Unlock()
+	if _, ok := f.factories[ns]; ok {
+		if _, ok := f.stopChan[ns]; !ok {
+			slog.Error("No stop channel for ns", slogs.Namespace, ns)
+			return false
+		}
+		slog.Debug("Stopping factory for ns", slogs.Namespace, ns)
+		close(f.stopChan[ns])
+		delete(f.stopChan, ns)
+		delete(f.factories, ns)
+		return true
+	}
+	return false
+}
+
+func (f *Factory) namespaces() []string {
+	f.mx.RLock()
+	defer f.mx.RUnlock()
+	namespaces := make([]string, 0, len(f.factories))
+	for ns := range f.factories {
+		namespaces = append(namespaces, ns)
+	}
+	return namespaces
 }

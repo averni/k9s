@@ -86,7 +86,7 @@ func (c *Command) Reset(path string, nuke bool) error {
 	return nil
 }
 
-var allowedCmds = sets.New[*client.GVR](
+var allowedCmds = sets.New(
 	client.PodGVR,
 	client.SvcGVR,
 	client.DpGVR,

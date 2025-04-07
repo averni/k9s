@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	di "k8s.io/client-go/dynamic/dynamicinformer"
 )
 
 func toGVR(gvr string) schema.GroupVersionResource {
@@ -34,19 +35,22 @@ func namespaced(n string) (ns, res string) {
 // DumpFactory for debug.
 func DumpFactory(f *Factory) {
 	slog.Debug("----------- FACTORIES -------------")
-	for ns := range f.factories {
+	f.factories.Range(func(key, value interface{}) bool {
+		ns := key.(string)
 		slog.Debug(fmt.Sprintf("  Factory for NS %q", ns))
-	}
+		return true
+	})
 	slog.Debug("-----------------------------------")
 }
 
 // DebugFactory for debug.
 func DebugFactory(f *Factory, ns, gvr string) {
 	slog.Debug(fmt.Sprintf("----------- DEBUG FACTORY (%s) -------------", gvr))
-	fac, ok := f.factories[ns]
+	facVal, ok := f.factories.Load(ns)
 	if !ok {
 		return
 	}
+	fac := facVal.(di.DynamicSharedInformerFactory)
 	inf := fac.ForResource(toGVR(gvr))
 	for i, k := range inf.Informer().GetStore().ListKeys() {
 		slog.Debug(fmt.Sprintf("%d -- %s", i, k))

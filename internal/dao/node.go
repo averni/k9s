@@ -182,6 +182,7 @@ func (n *Node) List(ctx context.Context, ns string) ([]runtime.Object, error) {
 			slog.Error("Unable to list pods", slogs.Error, err)
 		}
 	}
+	runningPodsCount := 0
 	res := make([]runtime.Object, 0, len(oo))
 	for _, o := range oo {
 		u, ok := o.(*unstructured.Unstructured)
@@ -201,10 +202,20 @@ func (n *Node) List(ctx context.Context, ns string) ([]runtime.Object, error) {
 				)
 			}
 		}
+		if shouldCountPods {
+			runningPodsCount, err = n.CountRunningPods(pods, name)
+			if err != nil {
+				slog.Error("Unable to get running pods count",
+					slogs.ResName, name,
+					slogs.Error, err,
+				)
+			}
+		}
 		res = append(res, &render.NodeWithMetrics{
-			Raw:      u,
-			MX:       nmx[name],
-			PodCount: podCount,
+			Raw:          u,
+			MX:           nmx[name],
+			PodCount:     podCount,
+			RunningCount: runningPodsCount,
 		})
 	}
 
@@ -225,6 +236,32 @@ func (*Node) CountPods(oo []runtime.Object, nodeName string) (int, error) {
 		}
 		if node, ok := spec["nodeName"]; ok && node == nodeName {
 			count++
+		}
+	}
+
+	return count, nil
+}
+
+// CountRunningPods counts the running pods scheduled on a given node.
+func (*Node) CountRunningPods(oo []runtime.Object, nodeName string) (int, error) {
+	var count int
+	for _, o := range oo {
+		u, ok := o.(*unstructured.Unstructured)
+		if !ok {
+			return count, fmt.Errorf("expecting *Unstructured but got `%T", o)
+		}
+		spec, ok := u.Object["spec"].(map[string]any)
+		if !ok {
+			return count, fmt.Errorf("expecting spec interface map but got `%T", o)
+		}
+		if node, ok := spec["nodeName"]; ok && node == nodeName {
+			status, ok := u.Object["status"].(map[string]any)
+			if !ok {
+				return count, fmt.Errorf("expecting status interface map but got `%T", o)
+			}
+			if phase, ok := status["phase"]; ok && phase == "Running" {
+				count++
+			}
 		}
 	}
 

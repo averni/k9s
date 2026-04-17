@@ -133,6 +133,10 @@ func (n Node) defaultRow(nwm *NodeWithMetrics, r *model1.Row) error {
 	if pc := nwm.PodCount; pc == -1 {
 		podCount = NAValue
 	}
+	runningPodCount := strconv.Itoa(nwm.RunningCount)
+	if rpc := nwm.RunningCount; rpc == -1 {
+		runningPodCount = NAValue
+	}
 	r.ID = client.FQN("", no.Name)
 	r.Fields = model1.Fields{
 		no.Name,
@@ -145,7 +149,8 @@ func (n Node) defaultRow(nwm *NodeWithMetrics, r *model1.Row) error {
 		no.Status.NodeInfo.KernelVersion,
 		iIP,
 		eIP,
-		podCount,
+		runningPodCount + "/" + podCount,
+		// runningPodCount,
 		toMc(c.cpu),
 		toMc(a.cpu),
 		client.ToPercentageStr(c.cpu, a.cpu),
@@ -219,9 +224,10 @@ func (Node) diagnose(ss []string) error {
 
 // NodeWithMetrics represents a node with its associated metrics.
 type NodeWithMetrics struct {
-	Raw      *unstructured.Unstructured
-	MX       *mv1beta1.NodeMetrics
-	PodCount int
+	Raw          *unstructured.Unstructured
+	MX           *mv1beta1.NodeMetrics
+	PodCount     int
+	RunningCount int
 }
 
 // GetObjectKind returns a schema object.

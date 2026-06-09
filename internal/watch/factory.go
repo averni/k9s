@@ -136,6 +136,18 @@ func (f *Factory) List(gvr *client.GVR, ns string, wait bool, lbls labels.Select
 	return inf.Lister().ByNamespace(ns).List(lbls)
 }
 
+// HasSynced checks if given informer is up to date.
+func (f *Factory) HasSynced(gvr *client.GVR, ns string) (bool, error) {
+	if client.IsAllNamespace(ns) {
+		ns = client.BlankNamespace
+	}
+	inf, err := f.CanForResource(ns, gvr, client.ListAccess)
+	if err != nil {
+		return false, err
+	}
+	return inf.Informer().HasSynced(), nil
+}
+
 // Get retrieves a given resource.
 func (f *Factory) Get(gvr *client.GVR, fqn string, wait bool, _ labels.Selector) (runtime.Object, error) {
 	ns, n := namespaced(fqn)
